@@ -5,21 +5,41 @@ name: build
 # Builds each on a NATIVE arm64 runner (ubuntu-24.04-arm; free on public repos)
 # and pushes to GHCR. No PAT needed — GITHUB_TOKEN has packages:write.
 # Add a target: submodule under vendor/ + one entry in targets.json. No edits here.
+#
+# A target is built ONLY when its submodule actually moves — never on plain
+# code/doc/workflow commits. The `watch` job decides what to build; `build` runs
+# the matrix. If nothing moved, the matrix is empty and `build` is skipped.
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**.md"      # doc-only changes don't need a rebuild
-  workflow_dispatch:
+  # Twice daily: check every target's upstream, bump the ones that moved, build
+  # only those. An unchanged check is a few seconds and produces no build.
   schedule:
-    # Twice daily (09:17 & 21:17 UTC). Cheap: with a warm cache an unchanged run
-    # is ~30s and re-pushes the same :latest digest, so nothing downstream sees a
-    # change unless a submodule actually moved.
     - cron: "17 9,21 * * *"
 
+  # Manual: pick a target (or all); `force` builds the current pin without waiting
+  # for an upstream change (e.g. to rebuild after a base-image or Dockerfile fix).
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target to check/build: 'all' or a name from targets.json"
+        type: string
+        default: all
+      force:
+        description: "Build current pin(s) even if upstream hasn't moved"
+        type: boolean
+        default: false
+
+  # Manual pin bump / new target: build only the targets that changed in the push.
+  # Scoped to submodule + manifest paths so code/doc/workflow commits never build.
+  push:
+    branches: [main]
+    paths:
+      - "vendor/**"
+      - ".gitmodules"
+      - "targets.json"
+
 concurrency:
-  # A newer push/dispatch supersedes an in-flight build of the same ref.
+  # A newer push/dispatch supersedes an in-flight run of the same ref.
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -29,53 +49,102 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Prepare: (scheduled) fast-forward every submodule to its upstream HEAD and
-  # commit the bump; then emit the SHA to build and the matrix from targets.json.
-  # A GITHUB_TOKEN push does not re-trigger workflows, so the build must run in
-  # THIS run — hence build `needs: prepare` and checks out the post-bump SHA.
+  # watch: decide what to build, and (on a scheduled/dispatch check) bump the
+  # moved submodules. Emits `matrix` (the targets to build) + `sha` to check out.
+  # A GITHUB_TOKEN push does not re-trigger workflows, so the bump and the build
+  # must happen in THIS run — hence build `needs: watch` + checks out watch's sha.
   # ---------------------------------------------------------------------------
-  prepare:
+  watch:
     runs-on: ubuntu-latest
     outputs:
-      sha: ${{ steps.out.outputs.sha }}
-      matrix: ${{ steps.out.outputs.matrix }}
+      sha: ${{ steps.plan.outputs.sha }}
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Bump submodules to upstream HEAD (scheduled only)
-        if: github.event_name == 'schedule'
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_TARGET: ${{ inputs.target }}
+          IN_FORCE: ${{ inputs.force }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          git submodule update --remote --recursive
-          if git diff --quiet; then
-            echo "No submodule changes."
-          else
-            git config user.name  "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -am "chore: bump vendored targets to upstream HEAD"
-            git push
+          set -euo pipefail
+          target="${IN_TARGET:-all}"
+          force="${IN_FORCE:-false}"
+
+          ctx() { jq -r --arg n "$1" '.[]|select(.name==$n).context' targets.json; }
+
+          # Targets in scope (all, or one named target).
+          consider=()
+          while IFS= read -r n; do
+            if [ "$target" = "all" ] || [ "$target" = "$n" ]; then consider+=("$n"); fi
+          done < <(jq -r '.[].name' targets.json)
+          if [ ${#consider[@]} -eq 0 ]; then
+            echo "::error::No target named '$target' in targets.json"; exit 1
           fi
 
-      - id: out
-        run: |
+          build=()
+          if [ "$EVENT" = "push" ]; then
+            # Build targets whose submodule path changed in this push.
+            base="$BEFORE"
+            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              base="HEAD~1"
+            fi
+            changed="$(git diff --name-only "$base" HEAD || true)"
+            for n in "${consider[@]}"; do
+              c="$(ctx "$n")"
+              if grep -qx "$c" <<<"$changed" || grep -q "^${c}/" <<<"$changed"; then build+=("$n"); fi
+            done
+          elif [ "$force" = "true" ]; then
+            # Rebuild current pins, no upstream check.
+            build=("${consider[@]}")
+          else
+            # Watch: fast-forward each in-scope submodule; keep the ones that moved.
+            for n in "${consider[@]}"; do
+              c="$(ctx "$n")"
+              before="$(git -C "$c" rev-parse HEAD)"
+              git submodule update --remote "$c"
+              after="$(git -C "$c" rev-parse HEAD)"
+              if [ "$before" != "$after" ]; then build+=("$n"); fi
+            done
+            if [ ${#build[@]} -gt 0 ] && ! git diff --quiet; then
+              git config user.name  "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git commit -am "chore: bump ${build[*]} to upstream HEAD"
+              git push
+            fi
+          fi
+
+          if [ ${#build[@]} -eq 0 ]; then
+            echo "Nothing to build."
+            echo 'matrix={"target":[]}' >> "$GITHUB_OUTPUT"
+          else
+            echo "Will build: ${build[*]}"
+            names="$(printf '%s\n' "${build[@]}" | jq -R . | jq -cs .)"
+            matrix="$(jq -c --argjson names "$names" '{target: [ .[] | select(.name as $n | $names | index($n)) ]}' targets.json)"
+            echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "matrix=$(jq -c '{target: .}' targets.json)" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
-  # Build: one matrix leg per target, in parallel, on native arm64.
+  # build: one matrix leg per moved target, in parallel, on native arm64.
+  # Skipped entirely when watch found nothing to build (empty matrix).
   # ---------------------------------------------------------------------------
   build:
-    needs: prepare
+    needs: watch
+    if: ${{ fromJSON(needs.watch.outputs.matrix).target[0] != null }}
     runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.watch.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.sha }}
+          ref: ${{ needs.watch.outputs.sha }}
           submodules: recursive
 
       - name: Upstream version tag

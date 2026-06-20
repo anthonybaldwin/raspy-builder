@@ -2,9 +2,13 @@
 
 Builds upstream projects that ship a Dockerfile but publish no image, and pushes
 them to GHCR (arm64) so they can be digest-watched and updated like any normal
-image. Targets are git submodules under `vendor/`, listed in `targets.json`;
-GitHub Actions builds each on a native arm64 runner and weekly bumps them to
-upstream HEAD.
+image. Targets are git submodules under `vendor/`, listed in `targets.json`.
+
+A target builds **only when its submodule moves** — never on plain code/doc
+commits. Twice daily a `watch` job checks each upstream and rebuilds the ones that
+changed; a manual pin bump (push) builds the changed targets; or run it by hand
+from the Actions tab, picking a target — and `force` to rebuild a current pin
+without waiting for an upstream change.
 
 ## Targets
 
@@ -16,11 +20,8 @@ upstream HEAD.
 ```bash
 git submodule add <url> vendor/<name>
 # add { "name", "context", "dockerfile" } to targets.json
-git commit -am "add <name>" && git push
+git commit -am "add <name>" && git push   # builds the new target
 ```
-
-After the first build, set the new GHCR package to **Public** (GitHub → Packages
-→ settings) so pulls need no auth.
 
 ## Bump a pin manually
 

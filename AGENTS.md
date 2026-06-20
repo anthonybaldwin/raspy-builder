@@ -17,9 +17,13 @@ an application itself.
   bump. Fixes belong in the upstream project.
 - `targets.json` — the build manifest: one object per image,
   `{ "name", "context", "dockerfile" }`. `name` becomes `ghcr.io/<owner>/<name>`.
-- `.github/workflows/build.yml` — builds every target on a native arm64 GitHub
-  runner and pushes to GHCR. Triggers: push to `main`, manual dispatch, and a
-  weekly schedule that first bumps submodules to upstream HEAD.
+- `.github/workflows/build.yml` — builds targets on a native arm64 GitHub runner
+  and pushes to GHCR. A target builds **only when its submodule moves**, never on
+  plain code/doc commits. Two jobs: `watch` decides what to build (and bumps moved
+  submodules on a check), `build` runs the matrix. Triggers: twice-daily schedule
+  (check upstreams, build the moved ones); `workflow_dispatch` with `target`
+  (all/one) + `force` (rebuild a current pin); and `push` scoped to
+  `vendor/**`/`.gitmodules`/`targets.json` (builds the targets changed in the push).
 
 ## Common tasks
 
@@ -28,11 +32,11 @@ Add a target:
 ```bash
 git submodule add <url> vendor/<name>
 # add { "name", "context", "dockerfile" } to targets.json
-git commit -am "add <name>" && git push
+git commit -am "add <name>" && git push   # builds the new target
 ```
 
-After its first build, set the new GHCR package to **Public** (GitHub → Packages
-→ settings) so consumers pull without auth.
+Packages publish **public** (inherited from this public repo), so consumers pull
+without auth. If a new one ever shows up private, flip it once in GitHub → Packages.
 
 Bump a pinned upstream manually:
 
