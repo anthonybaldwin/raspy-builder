@@ -1,0 +1,6 @@
+[submodule "vendor/claude-code-trace"]
+	path = vendor/claude-code-trace
+	url = https://github.com/delexw/claude-code-trace
+[submodule "vendor/codex-trace"]
+	path = vendor/codex-trace
+	url = https://github.com/PixelPaw-Labs/codex-trace

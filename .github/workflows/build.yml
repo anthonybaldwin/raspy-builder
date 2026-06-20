@@ -1,0 +1,111 @@
+name: build
+
+# Generic image builder. Each entry in targets.json is an upstream project
+# vendored as a git submodule under vendor/ that ships a Dockerfile but
+# publishes no prebuilt image. This workflow builds each one and pushes it to
+# GHCR, so any Docker host can manage it via a digest watcher (e.g. Diun) like
+# any normal registry image — updating becomes routine, the build happens here.
+#
+# Builds run on GitHub's NATIVE arm64 runners (ubuntu-24.04-arm), free on public
+# repos — many targets are Rust/native and would be punishingly slow under QEMU.
+#
+# No PAT/secret required: the automatic GITHUB_TOKEN has packages:write.
+# One-time per new image: set its GHCR package visibility to Public so pulls
+# need no auth.
+#
+# Add a target: add the upstream as a submodule under vendor/, then add one
+# object to targets.json. No edits to this file.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Weekly, Monday 09:17 UTC — "detect weekly, click to apply" cadence.
+    - cron: "17 9 * * 1"
+
+concurrency:
+  # A newer push/dispatch supersedes an in-flight build of the same ref.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # for the scheduled submodule-bump commit
+  packages: write   # for pushing to GHCR
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Prepare: (scheduled) fast-forward every submodule to its upstream HEAD and
+  # commit the bump; then emit the SHA to build and the matrix from targets.json.
+  # A GITHUB_TOKEN push does not re-trigger workflows, so the build must run in
+  # THIS run — hence build `needs: prepare` and checks out the post-bump SHA.
+  # ---------------------------------------------------------------------------
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.out.outputs.sha }}
+      matrix: ${{ steps.out.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Bump submodules to upstream HEAD (scheduled only)
+        if: github.event_name == 'schedule'
+        run: |
+          git submodule update --remote --recursive
+          if git diff --quiet; then
+            echo "No submodule changes."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -am "chore: bump vendored targets to upstream HEAD"
+            git push
+          fi
+
+      - id: out
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(jq -c '{target: .}' targets.json)" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Build: one matrix leg per target, in parallel, on native arm64.
+  # ---------------------------------------------------------------------------
+  build:
+    needs: prepare
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          submodules: recursive
+
+      - name: Upstream version tag
+        id: ver
+        run: echo "sha=$(git -C ${{ matrix.target.context }} rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.target.context }}
+          file: ${{ matrix.target.context }}/${{ matrix.target.dockerfile }}
+          platforms: ${{ matrix.target.platforms }}
+          build-args: ${{ matrix.target.build_args }}
+          push: true
+          provenance: false        # plain image manifest — keeps Diun digest-watch happy
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.target.name }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.target.name }}:${{ steps.ver.outputs.sha }}
+          cache-from: type=gha,scope=${{ matrix.target.name }}
+          cache-to: type=gha,scope=${{ matrix.target.name }},mode=max
