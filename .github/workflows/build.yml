@@ -9,6 +9,8 @@ name: build
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"      # doc-only changes don't need a rebuild
   workflow_dispatch:
   schedule:
     # Weekly, Monday 09:17 UTC — "detect weekly, click to apply" cadence.
