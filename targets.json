@@ -1,16 +1,4 @@
 [
-  {
-    "name": "claude-code-trace",
-    "context": "vendor/claude-code-trace",
-    "dockerfile": "Dockerfile",
-    "platforms": "linux/arm64",
-    "build_args": ""
-  },
-  {
-    "name": "codex-trace",
-    "context": "vendor/codex-trace",
-    "dockerfile": "Dockerfile",
-    "platforms": "linux/arm64",
-    "build_args": ""
-  }
+  { "name": "claude-code-trace", "context": "vendor/claude-code-trace", "dockerfile": "Dockerfile" },
+  { "name": "codex-trace",       "context": "vendor/codex-trace",       "dockerfile": "Dockerfile" }
 ]

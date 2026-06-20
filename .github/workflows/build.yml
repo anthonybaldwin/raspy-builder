@@ -1,20 +1,10 @@
 name: build
 
-# Generic image builder. Each entry in targets.json is an upstream project
-# vendored as a git submodule under vendor/ that ships a Dockerfile but
-# publishes no prebuilt image. This workflow builds each one and pushes it to
-# GHCR, so any Docker host can manage it via a digest watcher (e.g. Diun) like
-# any normal registry image — updating becomes routine, the build happens here.
-#
-# Builds run on GitHub's NATIVE arm64 runners (ubuntu-24.04-arm), free on public
-# repos — many targets are Rust/native and would be punishingly slow under QEMU.
-#
-# No PAT/secret required: the automatic GITHUB_TOKEN has packages:write.
-# One-time per new image: set its GHCR package visibility to Public so pulls
-# need no auth.
-#
-# Add a target: add the upstream as a submodule under vendor/, then add one
-# object to targets.json. No edits to this file.
+# arm64 image builder. Each entry in targets.json is an upstream project vendored
+# as a git submodule under vendor/ that ships a Dockerfile but publishes no image.
+# Builds each on a NATIVE arm64 runner (ubuntu-24.04-arm; free on public repos)
+# and pushes to GHCR. No PAT needed — GITHUB_TOKEN has packages:write.
+# Add a target: submodule under vendor/ + one entry in targets.json. No edits here.
 
 on:
   push:
@@ -100,8 +90,7 @@ jobs:
         with:
           context: ${{ matrix.target.context }}
           file: ${{ matrix.target.context }}/${{ matrix.target.dockerfile }}
-          platforms: ${{ matrix.target.platforms }}
-          build-args: ${{ matrix.target.build_args }}
+          platforms: linux/arm64
           push: true
           provenance: false        # plain image manifest — keeps Diun digest-watch happy
           tags: |
