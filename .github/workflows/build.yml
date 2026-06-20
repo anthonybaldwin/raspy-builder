@@ -13,8 +13,10 @@ on:
       - "**.md"      # doc-only changes don't need a rebuild
   workflow_dispatch:
   schedule:
-    # Weekly, Monday 09:17 UTC — "detect weekly, click to apply" cadence.
-    - cron: "17 9 * * 1"
+    # Twice daily (09:17 & 21:17 UTC). Cheap: with a warm cache an unchanged run
+    # is ~30s and re-pushes the same :latest digest, so nothing downstream sees a
+    # change unless a submodule actually moved.
+    - cron: "17 9,21 * * *"
 
 concurrency:
   # A newer push/dispatch supersedes an in-flight build of the same ref.
@@ -94,7 +96,7 @@ jobs:
           file: ${{ matrix.target.context }}/${{ matrix.target.dockerfile }}
           platforms: linux/arm64
           push: true
-          provenance: false        # plain image manifest — keeps Diun digest-watch happy
+          provenance: false        # plain image manifest (not an OCI index) — friendlier to digest watchers
           tags: |
             ghcr.io/${{ github.repository_owner }}/${{ matrix.target.name }}:latest
             ghcr.io/${{ github.repository_owner }}/${{ matrix.target.name }}:${{ steps.ver.outputs.sha }}
