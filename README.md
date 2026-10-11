@@ -14,6 +14,8 @@ without waiting for an upstream change.
 
 - `claude-code-trace` — [delexw/claude-code-trace](https://github.com/delexw/claude-code-trace)
 - `codex-trace` — [PixelPaw-Labs/codex-trace](https://github.com/PixelPaw-Labs/codex-trace)
+- `mlbserver` — [tonywagner/mlbserver](https://github.com/tonywagner/mlbserver) (upstream does publish
+  `tonywagner/mlbserver` on Docker Hub, but only sporadically — it trails master by months — so we build HEAD)
 
 ## Add a target
 

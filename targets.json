@@ -1,4 +1,5 @@
 [
   { "name": "claude-code-trace", "context": "vendor/claude-code-trace", "dockerfile": "Dockerfile" },
-  { "name": "codex-trace",       "context": "vendor/codex-trace",       "dockerfile": "Dockerfile" }
+  { "name": "codex-trace",       "context": "vendor/codex-trace",       "dockerfile": "Dockerfile" },
+  { "name": "mlbserver",         "context": "vendor/mlbserver",         "dockerfile": "Dockerfile" }
 ]

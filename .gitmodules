@@ -4,3 +4,6 @@
 [submodule "vendor/codex-trace"]
 	path = vendor/codex-trace
 	url = https://github.com/PixelPaw-Labs/codex-trace
+[submodule "vendor/mlbserver"]
+	path = vendor/mlbserver
+	url = https://github.com/tonywagner/mlbserver
