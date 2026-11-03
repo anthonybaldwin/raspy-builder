@@ -7,3 +7,6 @@
 [submodule "vendor/mlbserver"]
 	path = vendor/mlbserver
 	url = https://github.com/tonywagner/mlbserver
+[submodule "vendor/ebay-mcp"]
+	path = vendor/ebay-mcp
+	url = https://github.com/YosefHayim/ebay-mcp.git
