@@ -16,7 +16,8 @@ an application itself.
   **not** edit code under `vendor/`; it's upstream's and would be lost on the next
   bump. Fixes belong in the upstream project.
 - `targets.json` — the build manifest: one object per image,
-  `{ "name", "context", "dockerfile" }`. `name` becomes `ghcr.io/<owner>/<name>`.
+  `{ "name", "context", "dockerfile" }`, optionally `runner` for a native ARM64
+  runner override (eBay uses Ubicloud). `name` becomes `ghcr.io/<owner>/<name>`.
 - `.github/workflows/build.yml` — builds targets on a native arm64 GitHub runner
   and pushes to GHCR. A target builds **only when its submodule moves**, never on
   plain code/doc commits. Two jobs: `watch` decides what to build (and bumps moved

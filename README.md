@@ -14,6 +14,8 @@ without waiting for an upstream change.
 
 - `claude-code-trace` — [delexw/claude-code-trace](https://github.com/delexw/claude-code-trace)
 - `codex-trace` — [PixelPaw-Labs/codex-trace](https://github.com/PixelPaw-Labs/codex-trace)
+- `ebay-mcp` — [YosefHayim/ebay-mcp](https://github.com/YosefHayim/ebay-mcp), unmodified upstream Dockerfile
+  (Node 24), built on native ARM64 Ubicloud; no local application or base-image override.
 - `mlbserver` — [tonywagner/mlbserver](https://github.com/tonywagner/mlbserver) (upstream does publish
   `tonywagner/mlbserver` on Docker Hub, but only sporadically — it trails master by months — so we build HEAD)
 

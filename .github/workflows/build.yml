@@ -137,7 +137,7 @@ jobs:
   build:
     needs: watch
     if: ${{ fromJSON(needs.watch.outputs.matrix).target[0] != null }}
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.target.runner || 'ubuntu-24.04-arm' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.watch.outputs.matrix) }}
